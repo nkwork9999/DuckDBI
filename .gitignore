@@ -1,0 +1,36 @@
+# Build
+build/
+bin/
+*.o
+*.a
+*.so
+*.dylib
+*.duckdb_extension
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+/tmp/
+*.tmp
+*.log
+
+# DuckDB / test data
+*.db
+*.duckdb
+test.csv
+test.html
+
+# vcpkg
+vcpkg_installed/
+
+# Submodules (fetched by make)
+duckdb/
+extension-ci-tools/
