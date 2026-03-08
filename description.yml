@@ -1,13 +1,13 @@
 extension:
-  name: deckgl
-  description: Interactive geospatial visualization with deck.gl
+  name: duckdbi
+  description: Browser-based BI dashboard extension for DuckDB
   version: 0.1.0
   language: C++
   build: cmake
   license: MIT
   maintainers:
-    - kwork9999/miniplot
+    - nkwork9999
 
 repo:
-  github: ykwork9999/miniplot/duckdb-deckgl
+  github: nkwork9999/DuckDBI
   ref: main
