@@ -930,6 +930,7 @@ FROM sales GROUP BY category
         } catch (e) { setStatus('Export failed: ' + e.message, true); }
     }
 
+)HTML_PART3") + std::string(R"HTML_PART4(
     // ============================================================================
     // Report
     // ============================================================================
@@ -1085,7 +1086,7 @@ Positive trend observed.
     </script>
 </body>
 </html>
-)HTML_PART3");
+)HTML_PART4");
 
 // ============================================================================
 // HTTP Server
