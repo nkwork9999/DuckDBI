@@ -22,7 +22,7 @@ LOAD duckdbi;
 
 ```sql
 -- Start the BI server (opens browser)
-SELECT duckdbi_start('mydata.db', 8080);
+SELECT duckdbi_start('localhost', 8080);
 
 -- Stop the server
 SELECT duckdbi_stop();

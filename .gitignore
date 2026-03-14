@@ -31,6 +31,3 @@ test.html
 # vcpkg
 vcpkg_installed/
 
-# Submodules (fetched by make)
-duckdb/
-extension-ci-tools/
