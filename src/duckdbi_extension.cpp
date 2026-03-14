@@ -24,7 +24,7 @@ namespace duckdb {
 // ============================================================================
 // HTML/JavaScript UI - Embedded Single Page Application
 // ============================================================================
-static const char* DUCKDBI_HTML = R"HTML(
+static const std::string DUCKDBI_HTML = std::string(R"HTML_PART1(
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -401,6 +401,7 @@ static const char* DUCKDBI_HTML = R"HTML(
         }
         .empty-state .icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
     </style>
+)HTML_PART1") + std::string(R"HTML_PART2(
 </head>
 <body>
     <!-- Navigation -->
@@ -610,7 +611,7 @@ FROM sales GROUP BY category
         <span>Connected to DuckDB</span>
         <span style="margin-left:auto;" id="status-msg">Ready</span>
     </div>
-
+)HTML_PART2") + std::string(R"HTML_PART3(
     <script>
     // ============================================================================
     // State
@@ -1084,7 +1085,7 @@ Positive trend observed.
     </script>
 </body>
 </html>
-)HTML";
+)HTML_PART3");
 
 // ============================================================================
 // HTTP Server
