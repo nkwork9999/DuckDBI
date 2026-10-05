@@ -1,23 +1,24 @@
 #define DUCKDB_EXTENSION_MAIN
 
 #include "duckdbi_extension.hpp"
+#include "duckdb/catalog/catalog.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/function/scalar_function.hpp"
-#include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/main/connection.hpp"
 #include "duckdb/main/database.hpp"
-#include "duckdb/catalog/catalog.hpp"
+#include "duckdb/main/extension/extension_loader.hpp"
+#include "web_encoding.hpp"
 
 #include "httplib_wrapper.hpp"
 
-#include <thread>
 #include <atomic>
-#include <memory>
-#include <sstream>
-#include <map>
-#include <vector>
-#include <mutex>
 #include <cstdlib>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <sstream>
+#include <thread>
+#include <vector>
 
 namespace duckdb {
 
@@ -676,24 +677,34 @@ FROM sales GROUP BY category
     }
 
     function renderTables() {
-        const html = tables.length ? tables.map(t => `
-            <div class="table-item" onclick="selectTable('${t.table_name}')">
-                <div class="table-name">${t.table_name}</div>
-                <div class="table-info">${t.table_schema || 'main'}</div>
-            </div>
-        `).join('') : '<div class="empty-state"><p>No tables found</p></div>';
-        
-        document.getElementById('explore-tables').innerHTML = html;
-        document.getElementById('query-tables').innerHTML = html;
+        for (const id of ['explore-tables', 'query-tables']) {
+            const list = document.getElementById(id);
+            list.replaceChildren();
+            if (!tables.length) { list.textContent = 'No tables found'; continue; }
+            for (const table of tables) {
+                const item = document.createElement('button');
+                item.className = 'table-item';
+                item.type = 'button';
+                item.dataset.tableName = table.table_name;
+                item.addEventListener('click', () => selectTable(table.table_name, item));
+                for (const [className, text] of [['table-name', table.table_name], ['table-info', table.table_schema || 'main']]) {
+                    const label = document.createElement('div');
+                    label.className = className;
+                    label.textContent = text;
+                    item.appendChild(label);
+                }
+                list.appendChild(item);
+            }
+        }
     }
 
     // ============================================================================
     // Explore
     // ============================================================================
-    async function selectTable(name) {
+    async function selectTable(name, selectedItem) {
         currentTable = name;
         document.querySelectorAll('#explore-tables .table-item').forEach(el => el.classList.remove('active'));
-        event.target.closest('.table-item').classList.add('active');
+        selectedItem?.classList.add('active');
         
         setStatus('Profiling ' + name + '...');
         const profile = await api('/api/explore/profile/' + encodeURIComponent(name));
@@ -712,20 +723,20 @@ FROM sales GROUP BY category
                 <div class="stat-card"><div class="stat-value">${p.size_estimate || 'N/A'}</div><div class="stat-label">Est. Size</div></div>
             </div>
             <div class="card">
-                <div class="card-header">📋 ${name}</div>
+                <div class="card-header">📋 ${escapeHTML(name)}</div>
                 <div class="card-body" style="overflow-x:auto;">
                     <table class="data-table">
                         <thead><tr>
                             <th>Column</th><th>Type</th><th>Nulls</th><th>Unique</th><th>Min</th><th>Max</th>
                         </tr></thead>
                         <tbody>
-                            ${p.columns.map(c => `<tr>
-                                <td class="clickable" onclick="showColumn('${name}','${c.name}')">${c.name}</td>
-                                <td><code>${c.type}</code></td>
+                            ${p.columns.map((c, index) => `<tr>
+                                <td class="clickable" data-column-index="${index}">${escapeHTML(c.name)}</td>
+                                <td><code>${escapeHTML(c.type)}</code></td>
                                 <td>${c.null_percent !== undefined ? c.null_percent.toFixed(1)+'%' : '-'}</td>
                                 <td>${fmt(c.unique_count)}</td>
-                                <td>${trunc(String(c.min ?? ''), 15)}</td>
-                                <td>${trunc(String(c.max ?? ''), 15)}</td>
+                                <td>${escapeHTML(trunc(String(c.min ?? ''), 15))}</td>
+                                <td>${escapeHTML(trunc(String(c.max ?? ''), 15))}</td>
                             </tr>`).join('')}
                         </tbody>
                     </table>
@@ -737,16 +748,20 @@ FROM sales GROUP BY category
             </div>
         `;
         
+        for (const cell of el.querySelectorAll('[data-column-index]')) {
+            const column = p.columns[Number(cell.dataset.columnIndex)];
+            cell.addEventListener('click', () => showColumn(name, column.name));
+        }
         // Render histogram for first numeric column
         const numCol = p.columns.find(c => /INT|FLOAT|DOUBLE|DECIMAL|REAL|NUMERIC/i.test(c.type));
         if (numCol) renderDistribution(name, numCol.name);
     }
 
     async function renderDistribution(table, col) {
-        const data = await runSQL(`SELECT "${col}" as v FROM "${table}" WHERE "${col}" IS NOT NULL LIMIT 10000`);
+        const data = await runSQL(`SELECT ${quoteIdentifier(col)} as v FROM ${quoteIdentifier(table)} WHERE ${quoteIdentifier(col)} IS NOT NULL LIMIT 10000`);
         if (data.error || !data.length) return;
         
-        const vals = data.map(r => parseFloat(r.v)).filter(v => !isNaN(v));
+        const vals = data.map(r => parseFloat(r.v)).filter(Number.isFinite);
         Plotly.newPlot('dist-chart', [{
             x: vals, type: 'histogram', marker: { color: '#38bdf8' }, nbinsx: 30
         }], plotLayout(col, 'Frequency'), plotConfig());
@@ -765,9 +780,9 @@ FROM sales GROUP BY category
                 <div class="stats-grid">
                     <div class="stat-card"><div class="stat-value">${d.min}</div><div class="stat-label">Min</div></div>
                     <div class="stat-card"><div class="stat-value">${d.max}</div><div class="stat-label">Max</div></div>
-                    <div class="stat-card"><div class="stat-value">${parseFloat(d.avg||0).toFixed(2)}</div><div class="stat-label">Mean</div></div>
-                    <div class="stat-card"><div class="stat-value">${parseFloat(d.std||0).toFixed(2)}</div><div class="stat-label">Std</div></div>
-                    <div class="stat-card"><div class="stat-value">${d.median||'-'}</div><div class="stat-label">Median</div></div>
+                    <div class="stat-card"><div class="stat-value">${d.avg == null ? '-' : Number(d.avg).toFixed(2)}</div><div class="stat-label">Mean</div></div>
+                    <div class="stat-card"><div class="stat-value">${d.std == null ? '-' : Number(d.std).toFixed(2)}</div><div class="stat-label">Std</div></div>
+                    <div class="stat-card"><div class="stat-value">${d.median ?? '-'}</div><div class="stat-label">Median</div></div>
                     <div class="stat-card"><div class="stat-value">${(d.null_percent||0).toFixed(1)}%</div><div class="stat-label">Nulls</div></div>
                 </div>
                 <div id="col-chart" style="height:280px;margin-top:12px;"></div>
@@ -777,8 +792,8 @@ FROM sales GROUP BY category
                 <div class="stats-grid">
                     <div class="stat-card"><div class="stat-value">${fmt(d.unique_count)}</div><div class="stat-label">Unique</div></div>
                     <div class="stat-card"><div class="stat-value">${(d.null_percent||0).toFixed(1)}%</div><div class="stat-label">Nulls</div></div>
-                    <div class="stat-card"><div class="stat-value">${d.min_length||'-'}</div><div class="stat-label">Min Len</div></div>
-                    <div class="stat-card"><div class="stat-value">${d.max_length||'-'}</div><div class="stat-label">Max Len</div></div>
+                    <div class="stat-card"><div class="stat-value">${d.min_length ?? '-'}</div><div class="stat-label">Min Len</div></div>
+                    <div class="stat-card"><div class="stat-value">${d.max_length ?? '-'}</div><div class="stat-label">Max Len</div></div>
                 </div>
                 <h4 style="margin:16px 0 8px;font-size:13px;">Top Values</h4>
                 <div id="col-chart" style="height:280px;"></div>
@@ -880,7 +895,7 @@ FROM sales GROUP BY category
 
     function updateChartList() {
         document.getElementById('chart-list').innerHTML = dashboardCharts.length ? 
-            dashboardCharts.map(c => `<div class="table-item"><div class="table-name">${c.title}</div><div class="table-info">${c.type}</div></div>`).join('') :
+            dashboardCharts.map(c => `<div class="table-item"><div class="table-name">${escapeHTML(c.title)}</div><div class="table-info">${escapeHTML(c.type)}</div></div>`).join('') :
             '<div class="empty-state"><p>No charts yet</p></div>';
     }
 
@@ -892,7 +907,7 @@ FROM sales GROUP BY category
         const x = xCol || cols[0];
         const y = yCol || cols[1] || cols[0];
         const xData = data.map(r => r[x]);
-        const yData = data.map(r => parseFloat(r[y]) || r[y]);
+        const yData = data.map(r => { const value = r[y]; if (value == null) return null; const number = Number(value); return Number.isFinite(number) ? number : value; });
         
         let traces = [];
         const layout = plotLayout(x, y);
@@ -979,7 +994,7 @@ Positive trend observed.
             const el = document.getElementById(c.id);
             if (!el) continue;
             if (data.error) {
-                el.innerHTML = `<div style="color:#ef4444;">Error: ${data.error}</div>`;
+                el.innerHTML = `<div style="color:#ef4444;">Error: ${escapeHTML(data.error)}</div>`;
             } else if (c.type === 'table') {
                 renderTable(c.id, data);
             } else {
@@ -989,13 +1004,18 @@ Positive trend observed.
         }
     }
 
+    function escapeHTML(value) {
+        return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
+    }
+    function quoteIdentifier(value) { return '"' + String(value).replace(/"/g, '""') + '"'; }
+
     function renderTable(id, data) {
         if (!data?.length) { document.getElementById(id).innerHTML = '<p style="color:#94a3b8;">No results</p>'; return; }
         const cols = Object.keys(data[0]);
         document.getElementById(id).innerHTML = `
             <table class="data-table">
-                <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
-                <tbody>${data.slice(0, 100).map(r => `<tr>${cols.map(c => `<td>${r[c] ?? 'NULL'}</td>`).join('')}</tr>`).join('')}</tbody>
+                <thead><tr>${cols.map(c => `<th>${escapeHTML(c)}</th>`).join('')}</tr></thead>
+                <tbody>${data.slice(0, 100).map(r => `<tr>${cols.map(c => `<td>${escapeHTML(r[c] ?? 'NULL')}</td>`).join('')}</tr>`).join('')}</tbody>
             </table>
             ${data.length > 100 ? `<p style="color:#94a3b8;font-size:11px;margin-top:8px;">Showing 100/${data.length}</p>` : ''}
         `;
@@ -1033,7 +1053,7 @@ Positive trend observed.
         const ms = ((performance.now() - t0) / 1000).toFixed(2);
         
         if (data.error) {
-            document.getElementById('query-results').innerHTML = `<div style="color:#ef4444;">${data.error}</div>`;
+            document.getElementById('query-results').innerHTML = `<div style="color:#ef4444;">${escapeHTML(data.error)}</div>`;
             document.getElementById('query-stats').textContent = '';
             setStatus('Query failed', true);
             return;
@@ -1093,389 +1113,428 @@ Positive trend observed.
 // ============================================================================
 class DuckDBIServer {
 private:
-    duckdb::unique_ptr<httplib::Server> server;
-    std::thread server_thread;
-    std::atomic<bool> running{false};
-    DatabaseInstance* db;
-    int port;
-    std::mutex mtx;
+  duckdb::unique_ptr<httplib::Server> server;
+  std::thread server_thread;
+  std::atomic<bool> running{false};
+  DatabaseInstance *db;
+  int port;
+  std::mutex mtx;
 
-    // Convert result to JSON
-    static std::string ToJSON(duckdb::unique_ptr<QueryResult> result) {
-        if (!result || result->HasError()) {
-            std::string msg = result ? result->GetError() : "Unknown error";
-            std::string esc;
-            for (char c : msg) {
-                if (c == '"') esc += "\\\"";
-                else if (c == '\\') esc += "\\\\";
-                else if (c == '\n') esc += "\\n";
-                else esc += c;
-            }
-            return "{\"error\":\"" + esc + "\"}";
+  static std::string ToJSON(duckdb::unique_ptr<QueryResult> result) {
+    using namespace web_encoding;
+    if (!result || result->HasError()) {
+      return "{\"error\":" +
+             JsonString(result ? result->GetError() : "Unknown error") + "}";
+    }
+    std::string json = "[";
+    bool first_row = true;
+    while (auto chunk = result->Fetch()) {
+      for (idx_t row = 0; row < chunk->size(); row++) {
+        if (!first_row)
+          json += ",";
+        first_row = false;
+        json += "{";
+        for (idx_t col = 0; col < chunk->ColumnCount(); col++) {
+          if (col)
+            json += ",";
+          json += JsonString(result->names[col]) + ":";
+          auto value = chunk->GetValue(col, row);
+          if (value.IsNull())
+            json += "null";
+          else if (result->types[col].id() == LogicalTypeId::BOOLEAN)
+            json += value.GetValue<bool>() ? "true" : "false";
+          else if (result->types[col].IsNumeric())
+            json += JsonNumber(value.ToString());
+          else
+            json += JsonString(value.ToString());
         }
-        
-        std::string json = "[";
-        bool first_row = true;
-        
+        json += "}";
+      }
+    }
+    return json + "]";
+  }
+
+  // Generate table profile
+  std::string Profile(Connection &conn, const std::string &table) {
+    std::stringstream j;
+    j << "{";
+
+    // Row count
+    auto rc = conn.Query("SELECT COUNT(*) FROM " +
+                         web_encoding::SqlIdentifier(table) + "");
+    int64_t rows = 0;
+    if (!rc->HasError()) {
+      auto ch = rc->Fetch();
+      if (ch && ch->size() > 0)
+        rows = ch->GetValue(0, 0).GetValue<int64_t>();
+    }
+    j << "\"row_count\":" << rows << ",";
+
+    // Columns
+    auto cols = conn.Query(
+        "SELECT column_name, data_type FROM information_schema.columns "
+        "WHERE table_name = " +
+        web_encoding::SqlLiteral(table) + " ORDER BY ordinal_position");
+
+    std::vector<std::pair<std::string, std::string>> columns;
+    if (!cols->HasError()) {
+      while (true) {
+        auto ch = cols->Fetch();
+        if (!ch || ch->size() == 0)
+          break;
+        for (idx_t i = 0; i < ch->size(); i++) {
+          columns.push_back(
+              {ch->GetValue(0, i).ToString(), ch->GetValue(1, i).ToString()});
+        }
+      }
+    }
+
+    j << "\"column_count\":" << columns.size() << ",";
+    j << "\"size_estimate\":\"" << (rows * columns.size() * 8 / 1024 / 1024)
+      << " MB\",";
+    j << "\"columns\":[";
+
+    bool first = true;
+    for (size_t i = 0; i < columns.size(); i++) {
+      const std::string &name = columns[i].first;
+      const std::string &type = columns[i].second;
+      if (!first)
+        j << ",";
+      first = false;
+
+      j << "{\"name\":" << web_encoding::JsonString(name)
+        << ",\"type\":" << web_encoding::JsonString(type);
+
+      auto stats = conn.Query(
+          "SELECT COUNT(*), COUNT(" + web_encoding::SqlIdentifier(name) +
+          "), COUNT(DISTINCT " + web_encoding::SqlIdentifier(name) +
+          "), "
+          "MIN(" +
+          web_encoding::SqlIdentifier(name) + "), MAX(" +
+          web_encoding::SqlIdentifier(name) + ") FROM " +
+          web_encoding::SqlIdentifier(table) + "");
+
+      if (!stats->HasError()) {
+        auto ch = stats->Fetch();
+        if (ch && ch->size() > 0) {
+          int64_t total = ch->GetValue(0, 0).GetValue<int64_t>();
+          int64_t notnull = ch->GetValue(1, 0).GetValue<int64_t>();
+          int64_t uniq = ch->GetValue(2, 0).GetValue<int64_t>();
+
+          double null_pct = total > 0 ? ((total - notnull) * 100.0 / total) : 0;
+          j << ",\"null_percent\":" << null_pct;
+          j << ",\"unique_count\":" << uniq;
+
+          auto minv = ch->GetValue(3, 0);
+          auto maxv = ch->GetValue(4, 0);
+
+          if (!minv.IsNull())
+            j << ",\"min\":" << web_encoding::JsonString(minv.ToString());
+          else
+            j << ",\"min\":null";
+
+          if (!maxv.IsNull())
+            j << ",\"max\":" << web_encoding::JsonString(maxv.ToString());
+          else
+            j << ",\"max\":null";
+        }
+      }
+      j << "}";
+    }
+
+    j << "]}";
+    return j.str();
+  }
+
+  // Generate column details
+  std::string ColumnDetail(Connection &conn, const std::string &table,
+                           const std::string &col) {
+    std::stringstream j;
+    j << "{\"name\":" << web_encoding::JsonString(col);
+
+    auto typeq =
+        conn.Query("SELECT data_type FROM information_schema.columns "
+                   "WHERE table_name = " +
+                   web_encoding::SqlLiteral(table) +
+                   " AND column_name = " + web_encoding::SqlLiteral(col) + "");
+
+    std::string colType = "VARCHAR";
+    if (!typeq->HasError()) {
+      auto ch = typeq->Fetch();
+      if (ch && ch->size() > 0)
+        colType = ch->GetValue(0, 0).ToString();
+    }
+    j << ",\"type\":" << web_encoding::JsonString(colType);
+
+    bool isNum = (colType.find("INT") != std::string::npos ||
+                  colType.find("FLOAT") != std::string::npos ||
+                  colType.find("DOUBLE") != std::string::npos ||
+                  colType.find("DECIMAL") != std::string::npos ||
+                  colType.find("NUMERIC") != std::string::npos ||
+                  colType.find("REAL") != std::string::npos);
+
+    j << ",\"is_numeric\":" << (isNum ? "true" : "false");
+
+    auto stats = conn.Query(
+        "SELECT COUNT(*), COUNT(" + web_encoding::SqlIdentifier(col) +
+        "), COUNT(DISTINCT " + web_encoding::SqlIdentifier(col) + ") FROM " +
+        web_encoding::SqlIdentifier(table) + "");
+
+    if (!stats->HasError()) {
+      auto ch = stats->Fetch();
+      if (ch && ch->size() > 0) {
+        int64_t total = ch->GetValue(0, 0).GetValue<int64_t>();
+        int64_t notnull = ch->GetValue(1, 0).GetValue<int64_t>();
+        int64_t uniq = ch->GetValue(2, 0).GetValue<int64_t>();
+
+        double null_pct = total > 0 ? ((total - notnull) * 100.0 / total) : 0;
+        j << ",\"null_percent\":" << null_pct;
+        j << ",\"unique_count\":" << uniq;
+      }
+    }
+
+    if (isNum) {
+      auto numStats =
+          conn.Query("SELECT MIN(" + web_encoding::SqlIdentifier(col) +
+                     "), MAX(" + web_encoding::SqlIdentifier(col) +
+                     "), "
+                     "AVG(" +
+                     web_encoding::SqlIdentifier(col) + "), STDDEV(" +
+                     web_encoding::SqlIdentifier(col) + "), MEDIAN(" +
+                     web_encoding::SqlIdentifier(col) +
+                     ") "
+                     "FROM " +
+                     web_encoding::SqlIdentifier(table) + "");
+
+      if (!numStats->HasError()) {
+        auto ch = numStats->Fetch();
+        if (ch && ch->size() > 0) {
+          j << ",\"min\":"
+            << web_encoding::JsonNumber(ch->GetValue(0, 0).ToString());
+          j << ",\"max\":"
+            << web_encoding::JsonNumber(ch->GetValue(1, 0).ToString());
+          j << ",\"avg\":"
+            << web_encoding::JsonNumber(ch->GetValue(2, 0).ToString());
+          j << ",\"std\":"
+            << (ch->GetValue(3, 0).IsNull() ? "0"
+                                            : ch->GetValue(3, 0).ToString());
+          j << ",\"median\":"
+            << web_encoding::JsonNumber(ch->GetValue(4, 0).ToString());
+        }
+      }
+
+      // Histogram
+      auto hist = conn.Query(
+          "WITH b AS (SELECT MIN(" + web_encoding::SqlIdentifier(col) +
+          ") as mn, MAX(" + web_encoding::SqlIdentifier(col) + ") as mx FROM " +
+          web_encoding::SqlIdentifier(table) + " WHERE " +
+          web_encoding::SqlIdentifier(col) +
+          " IS NOT NULL) "
+          "SELECT width_bucket(" +
+          web_encoding::SqlIdentifier(col) +
+          "::DOUBLE, (SELECT mn FROM b), (SELECT mx FROM b)+0.0001, 20) as "
+          "bkt, COUNT(*) as cnt "
+          "FROM " +
+          web_encoding::SqlIdentifier(table) + " WHERE " +
+          web_encoding::SqlIdentifier(col) +
+          " IS NOT NULL GROUP BY bkt ORDER BY bkt");
+
+      if (!hist->HasError()) {
+        j << ",\"histogram\":{\"bins\":[";
+        std::vector<std::pair<int, int64_t>> data;
         while (true) {
-            auto chunk = result->Fetch();
-            if (!chunk || chunk->size() == 0) break;
-            
-            for (idx_t row = 0; row < chunk->size(); row++) {
-                if (!first_row) json += ",";
-                json += "{";
-                
-                bool first_col = true;
-                for (idx_t col = 0; col < chunk->ColumnCount(); col++) {
-                    if (!first_col) json += ",";
-                    
-                    json += "\"" + result->names[col] + "\":";
-                    auto val = chunk->GetValue(col, row);
-                    
-                    if (val.IsNull()) {
-                        json += "null";
-                    } else {
-                        auto &type = result->types[col];
-                        if (type.IsNumeric() && type.id() != LogicalTypeId::VARCHAR) {
-                            json += val.ToString();
-                        } else {
-                            std::string s = val.ToString();
-                            json += "\"";
-                            for (char c : s) {
-                                if (c == '"') json += "\\\"";
-                                else if (c == '\\') json += "\\\\";
-                                else if (c == '\n') json += "\\n";
-                                else if (c == '\r') json += "\\r";
-                                else if (c == '\t') json += "\\t";
-                                else json += c;
-                            }
-                            json += "\"";
-                        }
-                    }
-                    first_col = false;
-                }
-                json += "}";
-                first_row = false;
-            }
+          auto ch = hist->Fetch();
+          if (!ch || ch->size() == 0)
+            break;
+          for (idx_t i = 0; i < ch->size(); i++) {
+            data.push_back({ch->GetValue(0, i).GetValue<int32_t>(),
+                            ch->GetValue(1, i).GetValue<int64_t>()});
+          }
         }
-        json += "]";
-        return json;
-    }
-
-    // Generate table profile
-    std::string Profile(Connection &conn, const std::string &table) {
-        std::stringstream j;
-        j << "{";
-        
-        // Row count
-        auto rc = conn.Query("SELECT COUNT(*) FROM \"" + table + "\"");
-        int64_t rows = 0;
-        if (!rc->HasError()) {
-            auto ch = rc->Fetch();
-            if (ch && ch->size() > 0) rows = ch->GetValue(0, 0).GetValue<int64_t>();
+        for (size_t i = 0; i < data.size(); i++) {
+          if (i > 0)
+            j << ",";
+          j << data[i].first;
         }
-        j << "\"row_count\":" << rows << ",";
-        
-        // Columns
-        auto cols = conn.Query(
-            "SELECT column_name, data_type FROM information_schema.columns "
-            "WHERE table_name = '" + table + "' ORDER BY ordinal_position"
-        );
-        
-        std::vector<std::pair<std::string, std::string>> columns;
-        if (!cols->HasError()) {
-            while (true) {
-                auto ch = cols->Fetch();
-                if (!ch || ch->size() == 0) break;
-                for (idx_t i = 0; i < ch->size(); i++) {
-                    columns.push_back({ch->GetValue(0, i).ToString(), ch->GetValue(1, i).ToString()});
-                }
-            }
+        j << "],\"counts\":[";
+        for (size_t i = 0; i < data.size(); i++) {
+          if (i > 0)
+            j << ",";
+          j << data[i].second;
         }
-        
-        j << "\"column_count\":" << columns.size() << ",";
-        j << "\"size_estimate\":\"" << (rows * columns.size() * 8 / 1024 / 1024) << " MB\",";
-        j << "\"columns\":[";
-        
-        bool first = true;
-        for (size_t i = 0; i < columns.size(); i++) {
-            const std::string &name = columns[i].first;
-            const std::string &type = columns[i].second;
-            if (!first) j << ",";
-            first = false;
-            
-            j << "{\"name\":\"" << name << "\",\"type\":\"" << type << "\"";
-            
-            auto stats = conn.Query(
-                "SELECT COUNT(*), COUNT(\"" + name + "\"), COUNT(DISTINCT \"" + name + "\"), "
-                "MIN(\"" + name + "\"), MAX(\"" + name + "\") FROM \"" + table + "\""
-            );
-            
-            if (!stats->HasError()) {
-                auto ch = stats->Fetch();
-                if (ch && ch->size() > 0) {
-                    int64_t total = ch->GetValue(0, 0).GetValue<int64_t>();
-                    int64_t notnull = ch->GetValue(1, 0).GetValue<int64_t>();
-                    int64_t uniq = ch->GetValue(2, 0).GetValue<int64_t>();
-                    
-                    double null_pct = total > 0 ? ((total - notnull) * 100.0 / total) : 0;
-                    j << ",\"null_percent\":" << null_pct;
-                    j << ",\"unique_count\":" << uniq;
-                    
-                    auto minv = ch->GetValue(3, 0);
-                    auto maxv = ch->GetValue(4, 0);
-                    
-                    auto escapeStr = [](const std::string &s) {
-                        std::string r;
-                        for (char c : s) {
-                            if (c == '"') r += "\\\"";
-                            else if (c == '\\') r += "\\\\";
-                            else if (c == '\n') r += "\\n";
-                            else r += c;
-                        }
-                        return r;
-                    };
-                    
-                    if (!minv.IsNull()) j << ",\"min\":\"" << escapeStr(minv.ToString()) << "\"";
-                    else j << ",\"min\":null";
-                    
-                    if (!maxv.IsNull()) j << ",\"max\":\"" << escapeStr(maxv.ToString()) << "\"";
-                    else j << ",\"max\":null";
-                }
-            }
-            j << "}";
-        }
-        
         j << "]}";
-        return j.str();
+      }
+    } else {
+      // String stats
+      auto lenStats =
+          conn.Query("SELECT MIN(LENGTH(" + web_encoding::SqlIdentifier(col) +
+                     ")), MAX(LENGTH(" + web_encoding::SqlIdentifier(col) +
+                     ")), AVG(LENGTH(" + web_encoding::SqlIdentifier(col) +
+                     ")) "
+                     "FROM " +
+                     web_encoding::SqlIdentifier(table) + " WHERE " +
+                     web_encoding::SqlIdentifier(col) + " IS NOT NULL");
+
+      if (!lenStats->HasError()) {
+        auto ch = lenStats->Fetch();
+        if (ch && ch->size() > 0) {
+          j << ",\"min_length\":"
+            << web_encoding::JsonNumber(ch->GetValue(0, 0).ToString());
+          j << ",\"max_length\":"
+            << web_encoding::JsonNumber(ch->GetValue(1, 0).ToString());
+          j << ",\"avg_length\":"
+            << web_encoding::JsonNumber(ch->GetValue(2, 0).ToString());
+        }
+      }
+
+      // Top values
+      auto top = conn.Query(
+          "SELECT " + web_encoding::SqlIdentifier(col) +
+          " as v, COUNT(*) as c FROM " + web_encoding::SqlIdentifier(table) +
+          " "
+          "WHERE " +
+          web_encoding::SqlIdentifier(col) + " IS NOT NULL GROUP BY " +
+          web_encoding::SqlIdentifier(col) + " ORDER BY c DESC LIMIT 10");
+
+      if (!top->HasError()) {
+        j << ",\"top_values\":[";
+        bool first = true;
+        while (true) {
+          auto ch = top->Fetch();
+          if (!ch || ch->size() == 0)
+            break;
+          for (idx_t i = 0; i < ch->size(); i++) {
+            if (!first)
+              j << ",";
+            first = false;
+            std::string v = ch->GetValue(0, i).ToString();
+            j << "{\"value\":" << web_encoding::JsonString(v)
+              << ",\"count\":" << ch->GetValue(1, i).GetValue<int64_t>() << "}";
+          }
+        }
+        j << "]";
+      }
     }
 
-    // Generate column details
-    std::string ColumnDetail(Connection &conn, const std::string &table, const std::string &col) {
-        std::stringstream j;
-        j << "{\"name\":\"" << col << "\"";
-        
-        auto typeq = conn.Query(
-            "SELECT data_type FROM information_schema.columns "
-            "WHERE table_name = '" + table + "' AND column_name = '" + col + "'"
-        );
-        
-        std::string colType = "VARCHAR";
-        if (!typeq->HasError()) {
-            auto ch = typeq->Fetch();
-            if (ch && ch->size() > 0) colType = ch->GetValue(0, 0).ToString();
-        }
-        j << ",\"type\":\"" << colType << "\"";
-        
-        bool isNum = (colType.find("INT") != std::string::npos || 
-                      colType.find("FLOAT") != std::string::npos ||
-                      colType.find("DOUBLE") != std::string::npos ||
-                      colType.find("DECIMAL") != std::string::npos ||
-                      colType.find("NUMERIC") != std::string::npos ||
-                      colType.find("REAL") != std::string::npos);
-        
-        j << ",\"is_numeric\":" << (isNum ? "true" : "false");
-        
-        auto stats = conn.Query(
-            "SELECT COUNT(*), COUNT(\"" + col + "\"), COUNT(DISTINCT \"" + col + "\") FROM \"" + table + "\""
-        );
-        
-        if (!stats->HasError()) {
-            auto ch = stats->Fetch();
-            if (ch && ch->size() > 0) {
-                int64_t total = ch->GetValue(0, 0).GetValue<int64_t>();
-                int64_t notnull = ch->GetValue(1, 0).GetValue<int64_t>();
-                int64_t uniq = ch->GetValue(2, 0).GetValue<int64_t>();
-                
-                double null_pct = total > 0 ? ((total - notnull) * 100.0 / total) : 0;
-                j << ",\"null_percent\":" << null_pct;
-                j << ",\"unique_count\":" << uniq;
-            }
-        }
-        
-        if (isNum) {
-            auto numStats = conn.Query(
-                "SELECT MIN(\"" + col + "\"), MAX(\"" + col + "\"), "
-                "AVG(\"" + col + "\"), STDDEV(\"" + col + "\"), MEDIAN(\"" + col + "\") "
-                "FROM \"" + table + "\""
-            );
-            
-            if (!numStats->HasError()) {
-                auto ch = numStats->Fetch();
-                if (ch && ch->size() > 0) {
-                    j << ",\"min\":" << ch->GetValue(0, 0).ToString();
-                    j << ",\"max\":" << ch->GetValue(1, 0).ToString();
-                    j << ",\"avg\":" << ch->GetValue(2, 0).ToString();
-                    j << ",\"std\":" << (ch->GetValue(3, 0).IsNull() ? "0" : ch->GetValue(3, 0).ToString());
-                    j << ",\"median\":" << ch->GetValue(4, 0).ToString();
-                }
-            }
-            
-            // Histogram
-            auto hist = conn.Query(
-                "WITH b AS (SELECT MIN(\"" + col + "\") as mn, MAX(\"" + col + "\") as mx FROM \"" + table + "\" WHERE \"" + col + "\" IS NOT NULL) "
-                "SELECT width_bucket(\"" + col + "\"::DOUBLE, (SELECT mn FROM b), (SELECT mx FROM b)+0.0001, 20) as bkt, COUNT(*) as cnt "
-                "FROM \"" + table + "\" WHERE \"" + col + "\" IS NOT NULL GROUP BY bkt ORDER BY bkt"
-            );
-            
-            if (!hist->HasError()) {
-                j << ",\"histogram\":{\"bins\":[";
-                std::vector<std::pair<int, int64_t>> data;
-                while (true) {
-                    auto ch = hist->Fetch();
-                    if (!ch || ch->size() == 0) break;
-                    for (idx_t i = 0; i < ch->size(); i++) {
-                        data.push_back({ch->GetValue(0, i).GetValue<int32_t>(), ch->GetValue(1, i).GetValue<int64_t>()});
-                    }
-                }
-                for (size_t i = 0; i < data.size(); i++) {
-                    if (i > 0) j << ",";
-                    j << data[i].first;
-                }
-                j << "],\"counts\":[";
-                for (size_t i = 0; i < data.size(); i++) {
-                    if (i > 0) j << ",";
-                    j << data[i].second;
-                }
-                j << "]}";
-            }
-        } else {
-            // String stats
-            auto lenStats = conn.Query(
-                "SELECT MIN(LENGTH(\"" + col + "\")), MAX(LENGTH(\"" + col + "\")), AVG(LENGTH(\"" + col + "\")) "
-                "FROM \"" + table + "\" WHERE \"" + col + "\" IS NOT NULL"
-            );
-            
-            if (!lenStats->HasError()) {
-                auto ch = lenStats->Fetch();
-                if (ch && ch->size() > 0) {
-                    j << ",\"min_length\":" << ch->GetValue(0, 0).ToString();
-                    j << ",\"max_length\":" << ch->GetValue(1, 0).ToString();
-                    j << ",\"avg_length\":" << ch->GetValue(2, 0).ToString();
-                }
-            }
-            
-            // Top values
-            auto top = conn.Query(
-                "SELECT \"" + col + "\" as v, COUNT(*) as c FROM \"" + table + "\" "
-                "WHERE \"" + col + "\" IS NOT NULL GROUP BY \"" + col + "\" ORDER BY c DESC LIMIT 10"
-            );
-            
-            if (!top->HasError()) {
-                j << ",\"top_values\":[";
-                bool first = true;
-                while (true) {
-                    auto ch = top->Fetch();
-                    if (!ch || ch->size() == 0) break;
-                    for (idx_t i = 0; i < ch->size(); i++) {
-                        if (!first) j << ",";
-                        first = false;
-                        std::string v = ch->GetValue(0, i).ToString();
-                        std::string esc;
-                        for (char c : v) {
-                            if (c == '"') esc += "\\\"";
-                            else if (c == '\\') esc += "\\\\";
-                            else if (c == '\n') esc += "\\n";
-                            else esc += c;
-                        }
-                        j << "{\"value\":\"" << esc << "\",\"count\":" << ch->GetValue(1, i).GetValue<int64_t>() << "}";
-                    }
-                }
-                j << "]";
-            }
-        }
-        
-        j << "}";
-        return j.str();
-    }
+    j << "}";
+    return j.str();
+  }
 
 public:
-    DuckDBIServer(DatabaseInstance* database, int p) : db(database), port(p) {}
-    
-    ~DuckDBIServer() { Stop(); }
-    
-    void Start(const std::string &host) {
-        server = make_uniq<httplib::Server>();
-        
-        // UI
-        server->Get("/", [](const httplib::Request&, httplib::Response& res) {
-            res.set_content(DUCKDBI_HTML, "text/html; charset=utf-8");
+  DuckDBIServer(DatabaseInstance *database, int p) : db(database), port(p) {}
+
+  ~DuckDBIServer() { Stop(); }
+
+  void Start(const std::string &host) {
+    server = make_uniq<httplib::Server>();
+
+    // UI
+    server->Get("/", [](const httplib::Request &, httplib::Response &res) {
+      res.set_content(DUCKDBI_HTML, "text/html; charset=utf-8");
+    });
+
+    // Execute SQL
+    server->Post("/api/query", [this](const httplib::Request &req,
+                                      httplib::Response &res) {
+      std::lock_guard<std::mutex> lock(mtx);
+      try {
+        Connection conn(*db);
+        res.set_content(ToJSON(conn.Query(req.body)), "application/json");
+      } catch (std::exception &e) {
+        res.status = 500;
+        res.set_content("{\"error\":" + web_encoding::JsonString(e.what()) +
+                            "}",
+                        "application/json");
+      }
+    });
+
+    // Tables list
+    server->Get("/api/tables", [this](const httplib::Request &,
+                                      httplib::Response &res) {
+      std::lock_guard<std::mutex> lock(mtx);
+      try {
+        Connection conn(*db);
+        auto result = conn.Query(
+            "SELECT table_name, table_schema FROM information_schema.tables "
+            "WHERE table_schema NOT IN ('information_schema','pg_catalog') "
+            "ORDER BY table_name");
+        res.set_content(ToJSON(std::move(result)), "application/json");
+      } catch (std::exception &e) {
+        res.status = 500;
+        res.set_content("{\"error\":" + web_encoding::JsonString(e.what()) +
+                            "}",
+                        "application/json");
+      }
+    });
+
+    // Table profile
+    server->Get(R"(/api/explore/profile/(.+))",
+                [this](const httplib::Request &req, httplib::Response &res) {
+                  std::lock_guard<std::mutex> lock(mtx);
+                  try {
+                    Connection conn(*db);
+                    res.set_content(Profile(conn, std::string(req.matches[1])),
+                                    "application/json");
+                  } catch (std::exception &e) {
+                    res.status = 500;
+                    res.set_content(
+                        "{\"error\":" + web_encoding::JsonString(e.what()) +
+                            "}",
+                        "application/json");
+                  }
+                });
+
+    // Column details
+    server->Get(
+        R"(/api/explore/column/([^/]+)/(.+))",
+        [this](const httplib::Request &req, httplib::Response &res) {
+          std::lock_guard<std::mutex> lock(mtx);
+          try {
+            Connection conn(*db);
+            res.set_content(ColumnDetail(conn, std::string(req.matches[1]),
+                                         std::string(req.matches[2])),
+                            "application/json");
+          } catch (std::exception &e) {
+            res.status = 500;
+            res.set_content("{\"error\":" + web_encoding::JsonString(e.what()) +
+                                "}",
+                            "application/json");
+          }
         });
-        
-        // Execute SQL
-        server->Post("/api/query", [this](const httplib::Request& req, httplib::Response& res) {
-            std::lock_guard<std::mutex> lock(mtx);
-            try {
-                Connection conn(*db);
-                res.set_content(ToJSON(conn.Query(req.body)), "application/json");
-            } catch (std::exception& e) {
-                res.status = 500;
-                res.set_content("{\"error\":\"" + std::string(e.what()) + "\"}", "application/json");
-            }
-        });
-        
-        // Tables list
-        server->Get("/api/tables", [this](const httplib::Request&, httplib::Response& res) {
-            std::lock_guard<std::mutex> lock(mtx);
-            try {
-                Connection conn(*db);
-                auto result = conn.Query(
-                    "SELECT table_name, table_schema FROM information_schema.tables "
-                    "WHERE table_schema NOT IN ('information_schema','pg_catalog') ORDER BY table_name"
-                );
-                res.set_content(ToJSON(std::move(result)), "application/json");
-            } catch (std::exception& e) {
-                res.status = 500;
-                res.set_content("{\"error\":\"" + std::string(e.what()) + "\"}", "application/json");
-            }
-        });
-        
-        // Table profile
-        server->Get(R"(/api/explore/profile/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
-            std::lock_guard<std::mutex> lock(mtx);
-            try {
-                Connection conn(*db);
-                res.set_content(Profile(conn, std::string(req.matches[1])), "application/json");
-            } catch (std::exception& e) {
-                res.status = 500;
-                res.set_content("{\"error\":\"" + std::string(e.what()) + "\"}", "application/json");
-            }
-        });
-        
-        // Column details
-        server->Get(R"(/api/explore/column/([^/]+)/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
-            std::lock_guard<std::mutex> lock(mtx);
-            try {
-                Connection conn(*db);
-                res.set_content(ColumnDetail(conn, std::string(req.matches[1]), std::string(req.matches[2])), "application/json");
-            } catch (std::exception& e) {
-                res.status = 500;
-                res.set_content("{\"error\":\"" + std::string(e.what()) + "\"}", "application/json");
-            }
-        });
-        
-        running = true;
-        server_thread = std::thread([this, host]() { server->listen(host.c_str(), port); });
-        
-        // Open browser
+
+    if (!server->bind_to_port(host, port)) {
+      throw IOException("Unable to bind HTTP server to %s:%d", host, port);
+    }
+    running = true;
+    server_thread = std::thread([this, host]() {
+      server->listen_after_bind();
+      running = false;
+    });
+
+    server->wait_until_ready();
+
+    // Open browser
 #ifdef __APPLE__
-        system(("open http://localhost:" + std::to_string(port)).c_str());
+    system(("open http://localhost:" + std::to_string(port)).c_str());
 #elif __linux__
-        system(("xdg-open http://localhost:" + std::to_string(port) + " 2>/dev/null &").c_str());
+    system(
+        ("xdg-open http://localhost:" + std::to_string(port) + " 2>/dev/null &")
+            .c_str());
 #elif _WIN32
-        system(("start http://localhost:" + std::to_string(port)).c_str());
+    system(("start http://localhost:" + std::to_string(port)).c_str());
 #endif
+  }
+
+  void Stop() {
+    if (server) {
+      server->stop();
+      if (server_thread.joinable())
+        server_thread.join();
+      running = false;
     }
-    
-    void Stop() {
-        if (running && server) {
-            server->stop();
-            if (server_thread.joinable()) server_thread.join();
-            running = false;
-        }
-    }
-    
-    bool IsRunning() const { return running; }
+  }
+
+  bool IsRunning() const { return running; }
 };
 
 // Global server
@@ -1485,37 +1544,49 @@ static duckdb::unique_ptr<DuckDBIServer> g_server;
 // DuckDB Functions
 // ============================================================================
 static void StartFunc(DataChunk &args, ExpressionState &state, Vector &result) {
-    auto &ctx = state.GetContext();
-    auto host = args.data[0].GetValue(0).ToString();
-    auto port = args.data[1].GetValue(0).GetValue<int32_t>();
-    
-    if (g_server && g_server->IsRunning()) g_server->Stop();
-    
-    auto &database = DatabaseInstance::GetDatabase(ctx);
-    g_server = make_uniq<DuckDBIServer>(&database, port);
-    g_server->Start(host);
-    
-    result.SetValue(0, Value("DuckDBI: http://" + host + ":" + std::to_string(port)));
+  auto &ctx = state.GetContext();
+  auto host = args.data[0].GetValue(0).ToString();
+  auto port = args.data[1].GetValue(0).GetValue<int32_t>();
+  if (host.empty() || host.find('\0') != std::string::npos) {
+    throw InvalidInputException(
+        "HTTP host must be non-empty and contain no NUL bytes");
+  }
+  if (port < 1 || port > 65535) {
+    throw InvalidInputException("HTTP port must be between 1 and 65535");
+  }
+
+  if (g_server && g_server->IsRunning())
+    g_server->Stop();
+
+  auto &database = DatabaseInstance::GetDatabase(ctx);
+  g_server = make_uniq<DuckDBIServer>(&database, port);
+  g_server->Start(host);
+
+  result.SetValue(
+      0, Value("DuckDBI: http://" + host + ":" + std::to_string(port)));
 }
 
 static void StopFunc(DataChunk &args, ExpressionState &state, Vector &result) {
-    if (g_server && g_server->IsRunning()) {
-        g_server->Stop();
-        result.SetValue(0, Value("DuckDBI stopped"));
-    } else {
-        result.SetValue(0, Value("No server running"));
-    }
+  if (g_server && g_server->IsRunning()) {
+    g_server->Stop();
+    result.SetValue(0, Value("DuckDBI stopped"));
+  } else {
+    result.SetValue(0, Value("No server running"));
+  }
 }
 
 // ============================================================================
 // Extension
 // ============================================================================
 void DuckdbiExtension::Load(ExtensionLoader &loader) {
-    auto start = ScalarFunction("duckdbi_start", {LogicalType::VARCHAR, LogicalType::INTEGER}, LogicalType::VARCHAR, StartFunc);
-    loader.RegisterFunction(start);
-    
-    auto stop = ScalarFunction("duckdbi_stop", {}, LogicalType::VARCHAR, StopFunc);
-    loader.RegisterFunction(stop);
+  auto start = ScalarFunction("duckdbi_start",
+                              {LogicalType::VARCHAR, LogicalType::INTEGER},
+                              LogicalType::VARCHAR, StartFunc);
+  loader.RegisterFunction(start);
+
+  auto stop =
+      ScalarFunction("duckdbi_stop", {}, LogicalType::VARCHAR, StopFunc);
+  loader.RegisterFunction(stop);
 }
 
 std::string DuckdbiExtension::Name() { return "duckdbi"; }
@@ -1525,13 +1596,11 @@ std::string DuckdbiExtension::Version() const { return "0.1.0"; }
 
 extern "C" {
 
-DUCKDB_EXTENSION_API void duckdbi_duckdb_cpp_init(duckdb::ExtensionLoader &loader) {
-    duckdb::DuckdbiExtension extension;
-    extension.Load(loader);
+DUCKDB_EXTENSION_API void
+duckdbi_duckdb_cpp_init(duckdb::ExtensionLoader &loader) {
+  duckdb::DuckdbiExtension extension;
+  extension.Load(loader);
 }
 
-DUCKDB_EXTENSION_API const char *duckdbi_version() {
-    return "0.1.0";
-}
-
+DUCKDB_EXTENSION_API const char *duckdbi_version() { return "0.1.0"; }
 }
