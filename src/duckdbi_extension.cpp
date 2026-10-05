@@ -8,6 +8,7 @@
 #include "duckdb/main/database.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "web_encoding.hpp"
+#include "simple_ui.hpp"
 
 #include "httplib_wrapper.hpp"
 
@@ -1430,6 +1431,10 @@ public:
 
     // UI
     server->Get("/", [](const httplib::Request &, httplib::Response &res) {
+      res.set_content(DUCKDBI_SIMPLE_HTML, "text/html; charset=utf-8");
+    });
+
+    server->Get("/advanced", [](const httplib::Request &, httplib::Response &res) {
       res.set_content(DUCKDBI_HTML, "text/html; charset=utf-8");
     });
 
