@@ -9,6 +9,7 @@
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "web_encoding.hpp"
 #include "simple_ui.hpp"
+#include "ui_helpers.hpp"
 
 #include "httplib_wrapper.hpp"
 
@@ -34,6 +35,7 @@ static const std::string DUCKDBI_HTML = std::string(R"HTML_PART1(
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DuckDBI - DuckDB BI Tool</title>
     
+    <script src="/ui.js"></script>
     <!-- Plotly.js for charts -->
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <!-- Gridstack.js for dashboard layout -->
@@ -402,6 +404,8 @@ static const std::string DUCKDBI_HTML = std::string(R"HTML_PART1(
             color: #64748b;
         }
         .empty-state .icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
+.markdown-preview{overflow-wrap:anywhere}.markdown-document{padding:16px 0;border-bottom:1px solid var(--line,#334155)}.markdown-document pre{overflow:auto;padding:12px;background:#80808018}.markdown-document table{border-collapse:collapse}.markdown-document th,.markdown-document td{border:1px solid #94a3b8;padding:6px}.markdown-document img{max-width:100%}
+.navbar{height:auto;min-height:56px;flex-wrap:wrap}.nav-right{align-items:center}.nav-right select{max-width:125px}@media(max-width:720px){.nav-tabs{flex-wrap:wrap}.navbar{padding:8px}.logo{margin-right:10px}}
     </style>
 )HTML_PART1") + std::string(R"HTML_PART2(
 </head>
@@ -410,13 +414,13 @@ static const std::string DUCKDBI_HTML = std::string(R"HTML_PART1(
     <nav class="navbar">
         <div class="logo">Duck<span>DBI</span></div>
         <div class="nav-tabs">
-            <button class="nav-tab active" onclick="showTab('explore')">📊 Explore</button>
-            <button class="nav-tab" onclick="showTab('dashboard')">📈 Dashboard</button>
-            <button class="nav-tab" onclick="showTab('report')">📝 Report</button>
-            <button class="nav-tab" onclick="showTab('query')">💻 Query</button>
+            <button class="nav-tab active" onclick="showTab('explore')" data-i18n="📊 Explore">📊 Explore</button>
+            <button class="nav-tab" onclick="showTab('dashboard')" data-i18n="📈 Dashboard">📈 Dashboard</button>
+            <button class="nav-tab" onclick="showTab('report')" data-i18n="📝 Report">📝 Report</button>
+            <button class="nav-tab" onclick="showTab('query')" data-i18n="💻 Query">💻 Query</button>
         </div>
-        <div class="nav-right">
-            <button class="btn btn-secondary" onclick="refreshTables()">🔄 Refresh</button>
+        <div class="nav-right"><label data-i18n="Language" for="ui-language">Language</label> <select id="ui-language"><option value="en">English</option><option value="zh-CN">简体中文</option><option value="ja">日本語</option></select>
+            <button class="btn btn-secondary" onclick="refreshTables()" data-i18n="🔄 Refresh">🔄 Refresh</button>
         </div>
     </nav>
 
@@ -426,13 +430,13 @@ static const std::string DUCKDBI_HTML = std::string(R"HTML_PART1(
         <!-- ============ EXPLORE TAB ============ -->
         <div id="explore-tab" class="tab-content active">
             <div class="sidebar">
-                <div class="sidebar-header">📁 Tables</div>
+                <div class="sidebar-header" data-i18n="📁 Tables">📁 Tables</div>
                 <div class="sidebar-content" id="explore-tables"></div>
             </div>
             <div class="content-area" id="explore-content">
                 <div class="empty-state">
                     <div class="icon">📊</div>
-                    <p>Select a table from the sidebar to explore</p>
+                    <p data-i18n="Select a table from the sidebar to explore">Select a table from the sidebar to explore</p>
                 </div>
             </div>
         </div>
@@ -441,12 +445,12 @@ static const std::string DUCKDBI_HTML = std::string(R"HTML_PART1(
         <div id="dashboard-tab" class="tab-content">
             <div class="sidebar">
                 <div class="sidebar-header">
-                    <span>📊 Charts</span>
-                    <button class="btn btn-sm btn-primary" onclick="openChartBuilder()">+ Add</button>
+                    <span data-i18n="📊 Charts">📊 Charts</span>
+                    <button class="btn btn-sm btn-primary" onclick="openChartBuilder()" data-i18n="+ Add">+ Add</button>
                 </div>
                 <div class="sidebar-content" id="chart-list"></div>
                 <div class="sidebar-footer">
-                    <button class="btn btn-success btn-block" onclick="exportDashboardPDF()">📥 Export PDF</button>
+                    <button class="btn btn-success btn-block" onclick="exportDashboardPDF()" data-i18n="📥 Export PDF">📥 Export PDF</button>
                 </div>
             </div>
             <div class="content-area">
@@ -458,20 +462,20 @@ static const std::string DUCKDBI_HTML = std::string(R"HTML_PART1(
         <div id="report-tab" class="tab-content">
             <div class="sidebar">
                 <div class="sidebar-header">
-                    <span>📄 Reports</span>
-                    <button class="btn btn-sm btn-primary" onclick="newReport()">+ New</button>
+                    <span data-i18n="📄 Reports">📄 Reports</span>
+                    <button class="btn btn-sm btn-primary" onclick="newReport()" data-i18n="+ New">+ New</button>
                 </div>
                 <div class="sidebar-content" id="report-list"></div>
                 <div class="sidebar-footer">
-                    <button class="btn btn-success btn-block" onclick="exportReportPDF()">📥 Export PDF</button>
+                    <button class="btn btn-success btn-block" onclick="exportReportPDF()" data-i18n="📥 Export PDF">📥 Export PDF</button>
                 </div>
             </div>
             <div class="content-area">
                 <div class="report-container">
                     <div class="report-pane">
                         <div style="margin-bottom: 8px; display: flex; gap: 8px;">
-                            <button class="btn btn-primary" onclick="runReport()">▶ Run</button>
-                            <button class="btn btn-secondary" onclick="saveReport()">💾 Save</button>
+                            <button class="btn btn-primary" onclick="runReport()" data-i18n="▶ Run">▶ Run</button>
+                            <button class="btn btn-secondary" onclick="saveReport()" data-i18n="💾 Save">💾 Save</button>
                         </div>
                         <textarea id="report-editor" class="report-editor" placeholder="# Report Title
 
@@ -484,11 +488,11 @@ FROM sales GROUP BY category
 "></textarea>
                     </div>
                     <div class="report-pane">
-                        <div style="margin-bottom: 8px; font-weight: 600; font-size: 13px;">Preview</div>
+                        <div style="margin-bottom: 8px; font-weight: 600; font-size: 13px;" data-i18n="Preview">Preview</div>
                         <div id="report-preview" class="report-preview">
                             <div class="empty-state">
                                 <div class="icon">📝</div>
-                                <p>Click "Run" to preview your report</p>
+                                <p data-i18n="Click &quot;Run&quot; to preview your report">Click "Run" to preview your report</p>
                             </div>
                         </div>
                     </div>
@@ -499,30 +503,30 @@ FROM sales GROUP BY category
         <!-- ============ QUERY TAB ============ -->
         <div id="query-tab" class="tab-content">
             <div class="sidebar">
-                <div class="sidebar-header">📁 Tables</div>
+                <div class="sidebar-header" data-i18n="📁 Tables">📁 Tables</div>
                 <div class="sidebar-content" id="query-tables"></div>
             </div>
             <div class="content-area">
                 <div class="card" style="margin-bottom: 16px;">
-                    <div class="card-header">SQL Query</div>
+                    <div class="card-header" data-i18n="SQL Query">SQL Query</div>
                     <div class="card-body">
                         <textarea id="sql-editor" class="sql-editor" placeholder="SELECT * FROM your_table LIMIT 100;">SELECT 1 as id, 'Hello DuckDBI!' as message;</textarea>
                         <div style="margin-top: 10px; display: flex; gap: 8px;">
-                            <button class="btn btn-primary" onclick="executeQuery()">▶ Execute</button>
-                            <button class="btn btn-secondary" onclick="formatSQL()">Format</button>
+                            <button class="btn btn-primary" onclick="executeQuery()" data-i18n="▶ Execute">▶ Execute</button>
+                            <button class="btn btn-secondary" onclick="formatSQL()" data-i18n="Format">Format</button>
                         </div>
                     </div>
                 </div>
                 <div class="card">
                     <div class="card-header">
-                        <span>Results</span>
+                        <span data-i18n="Results">Results</span>
                         <span id="query-stats" style="font-weight:normal;font-size:11px;color:#94a3b8;"></span>
                     </div>
                     <div class="card-body" style="overflow-x:auto;">
-                        <div id="query-results">
+                        <details class="card"><summary data-i18n="Markdown preview">Markdown preview</summary><div class="chart-controls"><label><span data-i18n="Markdown column">Markdown column</span><select id="markdown-column"></select></label><button id="preview-markdown" type="button" disabled data-i18n="Preview Markdown">Preview Markdown</button></div><p class="hint" data-i18n="Select a result column containing Markdown text.">Select a result column containing Markdown text.</p><div id="markdown-preview" class="markdown-preview"></div></details><div id="query-results">
                             <div class="empty-state">
                                 <div class="icon">💻</div>
-                                <p>Execute a query to see results</p>
+                                <p data-i18n="Execute a query to see results">Execute a query to see results</p>
                             </div>
                         </div>
                     </div>
@@ -535,63 +539,63 @@ FROM sales GROUP BY category
     <div id="chart-modal" class="modal-overlay">
         <div class="modal">
             <div class="modal-header">
-                <span>Add Chart</span>
+                <span data-i18n="Add Chart">Add Chart</span>
                 <button class="btn btn-sm btn-secondary" onclick="closeChartModal()">✕</button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label class="form-label">Chart Type</label>
+                    <label class="form-label" data-i18n="Chart Type">Chart Type</label>
                     <div class="chart-types">
                         <div class="chart-type-btn active" data-type="bar" onclick="selectChartType('bar')">
-                            <div class="icon">📊</div><div class="label">Bar</div>
+                            <div class="icon">📊</div><div class="label" data-i18n="Bar">Bar</div>
                         </div>
                         <div class="chart-type-btn" data-type="line" onclick="selectChartType('line')">
-                            <div class="icon">📈</div><div class="label">Line</div>
+                            <div class="icon">📈</div><div class="label" data-i18n="Line">Line</div>
                         </div>
                         <div class="chart-type-btn" data-type="pie" onclick="selectChartType('pie')">
-                            <div class="icon">🥧</div><div class="label">Pie</div>
+                            <div class="icon">🥧</div><div class="label" data-i18n="Pie">Pie</div>
                         </div>
                         <div class="chart-type-btn" data-type="scatter" onclick="selectChartType('scatter')">
-                            <div class="icon">⚬</div><div class="label">Scatter</div>
+                            <div class="icon">⚬</div><div class="label" data-i18n="Scatter">Scatter</div>
                         </div>
                         <div class="chart-type-btn" data-type="area" onclick="selectChartType('area')">
-                            <div class="icon">▨</div><div class="label">Area</div>
+                            <div class="icon">▨</div><div class="label" data-i18n="Area">Area</div>
                         </div>
                         <div class="chart-type-btn" data-type="histogram" onclick="selectChartType('histogram')">
-                            <div class="icon">▤</div><div class="label">Histogram</div>
+                            <div class="icon">▤</div><div class="label" data-i18n="Histogram">Histogram</div>
                         </div>
                         <div class="chart-type-btn" data-type="box" onclick="selectChartType('box')">
-                            <div class="icon">☐</div><div class="label">Box</div>
+                            <div class="icon">☐</div><div class="label" data-i18n="Box">Box</div>
                         </div>
                         <div class="chart-type-btn" data-type="heatmap" onclick="selectChartType('heatmap')">
-                            <div class="icon">🔥</div><div class="label">Heatmap</div>
+                            <div class="icon">🔥</div><div class="label" data-i18n="Heatmap">Heatmap</div>
                         </div>
                     </div>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">Title</label>
-                    <input type="text" id="chart-title" class="form-input" placeholder="My Chart">
+                    <label class="form-label" data-i18n="Title">Title</label>
+                    <input type="text" id="chart-title" class="form-input" placeholder="My Chart" data-i18n-placeholder="My Chart">
                 </div>
                 <div class="form-group">
-                    <label class="form-label">SQL Query</label>
+                    <label class="form-label" data-i18n="SQL Query">SQL Query</label>
                     <textarea id="chart-sql" class="sql-editor" style="min-height:80px;" placeholder="SELECT category, SUM(amount) FROM sales GROUP BY category"></textarea>
                 </div>
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                     <div class="form-group">
-                        <label class="form-label">X Axis Column</label>
+                        <label class="form-label" data-i18n="X Axis Column">X Axis Column</label>
                         <input type="text" id="chart-x" class="form-input" placeholder="category">
                     </div>
                     <div class="form-group">
-                        <label class="form-label">Y Axis Column</label>
+                        <label class="form-label" data-i18n="Y Axis Column">Y Axis Column</label>
                         <input type="text" id="chart-y" class="form-input" placeholder="sum">
                     </div>
                 </div>
                 <div id="chart-preview-area"></div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeChartModal()">Cancel</button>
-                <button class="btn btn-primary" onclick="previewChart()">Preview</button>
-                <button class="btn btn-success" onclick="addChart()">Add</button>
+                <button class="btn btn-secondary" onclick="closeChartModal()" data-i18n="Cancel">Cancel</button>
+                <button class="btn btn-primary" onclick="previewChart()" data-i18n="Preview">Preview</button>
+                <button class="btn btn-success" onclick="addChart()" data-i18n="Add">Add</button>
             </div>
         </div>
     </div>
@@ -600,7 +604,7 @@ FROM sales GROUP BY category
     <div id="column-modal" class="modal-overlay">
         <div class="modal" style="width:700px;">
             <div class="modal-header">
-                <span id="column-modal-title">Column Details</span>
+                <span id="column-modal-title" data-i18n="Column Details">Column Details</span>
                 <button class="btn btn-sm btn-secondary" onclick="closeColumnModal()">✕</button>
             </div>
             <div class="modal-body" id="column-modal-body"></div>
@@ -610,8 +614,8 @@ FROM sales GROUP BY category
     <!-- Status Bar -->
     <div class="status-bar">
         <div class="status-dot"></div>
-        <span>Connected to DuckDB</span>
-        <span style="margin-left:auto;" id="status-msg">Ready</span>
+        <span data-i18n="Connected to DuckDB">Connected to DuckDB</span>
+        <span style="margin-left:auto;" id="status-msg" data-i18n="Ready">Ready</span>
     </div>
 )HTML_PART2") + std::string(R"HTML_PART3(
     <script>
@@ -649,7 +653,7 @@ FROM sales GROUP BY category
 
     function setStatus(msg, isErr = false) {
         const el = document.getElementById('status-msg');
-        el.textContent = msg;
+        el.textContent = DuckDBIUI.t(msg);
         el.style.color = isErr ? '#ef4444' : '#94a3b8';
     }
 
@@ -728,7 +732,7 @@ FROM sales GROUP BY category
                 <div class="card-body" style="overflow-x:auto;">
                     <table class="data-table">
                         <thead><tr>
-                            <th>Column</th><th>Type</th><th>Nulls</th><th>Unique</th><th>Min</th><th>Max</th>
+                            <th>Column</th><th data-i18n="Type">Type</th><th>Nulls</th><th>Unique</th><th>Min</th><th>Max</th>
                         </tr></thead>
                         <tbody>
                             ${p.columns.map((c, index) => `<tr>
@@ -897,7 +901,7 @@ FROM sales GROUP BY category
     function updateChartList() {
         document.getElementById('chart-list').innerHTML = dashboardCharts.length ? 
             dashboardCharts.map(c => `<div class="table-item"><div class="table-name">${escapeHTML(c.title)}</div><div class="table-info">${escapeHTML(c.type)}</div></div>`).join('') :
-            '<div class="empty-state"><p>No charts yet</p></div>';
+            '<div class="empty-state"><p data-i18n="No charts yet">No charts yet</p></div>';
     }
 
     function renderChart(id, type, data, xCol, yCol) {
@@ -1011,7 +1015,7 @@ Positive trend observed.
     function quoteIdentifier(value) { return '"' + String(value).replace(/"/g, '""') + '"'; }
 
     function renderTable(id, data) {
-        if (!data?.length) { document.getElementById(id).innerHTML = '<p style="color:#94a3b8;">No results</p>'; return; }
+        if (!data?.length) { document.getElementById(id).innerHTML = '<p style="color:#94a3b8;" data-i18n="No results">No results</p>'; return; }
         const cols = Object.keys(data[0]);
         document.getElementById(id).innerHTML = `
             <table class="data-table">
@@ -1044,6 +1048,13 @@ Positive trend observed.
     // ============================================================================
     // Query
     // ============================================================================
+    let queryRows = [];
+    function updateMarkdownColumns() {
+        const select = document.getElementById('markdown-column'); select.replaceChildren();
+        for (const column of Object.keys(queryRows[0] || {}).filter(column => queryRows.some(row => typeof row[column] === 'string'))) { const option = document.createElement('option'); option.value = column; option.textContent = column; select.appendChild(option); }
+        document.getElementById('preview-markdown').disabled = !select.options.length;
+        document.getElementById('markdown-preview').replaceChildren();
+    }
     async function executeQuery() {
         const sql = document.getElementById('sql-editor').value;
         if (!sql.trim()) return;
@@ -1061,6 +1072,7 @@ Positive trend observed.
         }
         
         document.getElementById('query-stats').textContent = `${data.length} rows · ${ms}s`;
+        queryRows = data; updateMarkdownColumns();
         renderTable('query-results', data);
         setStatus('Ready');
     }
@@ -1099,6 +1111,9 @@ Positive trend observed.
     // Init
     // ============================================================================
     document.addEventListener('DOMContentLoaded', () => {
+        DuckDBIUI.init();
+        document.getElementById('preview-markdown').addEventListener('click', () => { try { DuckDBIUI.preview(document.getElementById('markdown-preview'), queryRows, document.getElementById('markdown-column').value); } catch (error) { setStatus(error.message, true); } });
+        document.getElementById('markdown-column').addEventListener('change', () => document.getElementById('markdown-preview').replaceChildren());
         refreshTables();
         updateChartList();
         const saved = localStorage.getItem('duckdbi-report');
@@ -1432,6 +1447,10 @@ public:
     // UI
     server->Get("/", [](const httplib::Request &, httplib::Response &res) {
       res.set_content(DUCKDBI_SIMPLE_HTML, "text/html; charset=utf-8");
+    });
+
+    server->Get("/ui.js", [](const httplib::Request &, httplib::Response &res) {
+      res.set_content(DUCKDBI_UI_JS, "application/javascript; charset=utf-8");
     });
 
     server->Get("/advanced", [](const httplib::Request &, httplib::Response &res) {

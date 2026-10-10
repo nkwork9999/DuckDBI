@@ -18,3 +18,11 @@ and shared library installed, compile `test/native_http_test.cpp` with C++17,
 `-I src/include`, the DuckDB include/library paths, and `-lduckdb`, then run it.
 It checks HTML routing, real table discovery, JSON values and errors, and restart.
 It uses loopback ports 19881 (DuckGL) and 19882 (DuckDBI).
+
+DuckDBI also tests language switching, reload/route persistence, automatic Chinese
+locale selection with unavailable localStorage, and Markdown previews on both
+routes. Markdown regressions cover headings/lists/code, multiple documents,
+NULL/non-text columns, query replacement, missing parser errors, and HTML/link
+sanitization. SQL fences in stored Markdown must not issue further queries.
+The existing Marked v9 parser is served from a pinned dev dependency in browser
+tests, rather than mocked or downloaded from the CDN.
