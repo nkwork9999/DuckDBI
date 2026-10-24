@@ -26,3 +26,15 @@ NULL/non-text columns, query replacement, missing parser errors, and HTML/link
 sanitization. SQL fences in stored Markdown must not issue further queries.
 The existing Marked v9 parser is served from a pinned dev dependency in browser
 tests, rather than mocked or downloaded from the CDN.
+
+DuckDB 2.0 submission regressions live in `test/sql/server.test`. They cover
+recoverable port errors, connection reuse, NULL input, and stop calls across
+multiple vector batches. The start/stop functions are volatile because they
+change server state; only start is fallible because input validation and binding
+can fail.
+
+Run `python3 test/native_extension_test.py --duckdb PATH_TO_DUCKDB --extension
+PATH_TO_EXTENSION` with a matching native CLI and built extension to exercise the
+actual extension loader, SQL callbacks, HTTP query metadata, NULLs, errors,
+4097-row results, and UI routes. The source distribution workflow runs it as a
+post-build command on Linux targets.
