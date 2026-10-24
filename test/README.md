@@ -41,3 +41,9 @@ JSON value types, filtered/multibatch results, errors and connection recovery.
 The source distribution pipeline runs it through the Linux post-build hook.
 `test/sql/lifecycle.test` also runs in the normal native SQL suite and covers
 multirow stop, invalid ports, NULLs and connection reuse.
+
+`test/native_server_test.py` retains the parallel CI follow-up's SQL/HTTP
+regressions: CLI input errors and recovery, stop results across4,097 rows,
+server lifecycle, NULL startup and HTTP rows. It accepts the same `--duckdb` and
+`--extension` arguments. The Linux post-build command executes both native
+scripts; the original `test/sql/server.test` also remains in the normal suite.

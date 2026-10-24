@@ -24,12 +24,13 @@
     "multirow_start_results": 3,
     "multirow_stop_results": 4099,
     "native_sql": {
-      "combined_cases": 2,
-      "combined_assertions": 14,
+      "combined_cases": 4,
+      "combined_assertions": 24,
       "skips": 0,
       "local_harness": "same SQL with require replaced by mandatory absolute LOAD; matching actual SDK unittest runner"
     },
-    "cross_platform_ci": "pending_new_source_and_community_revision"
+    "cross_platform_ci": "pending_new_source_and_community_revision",
+    "parallel_native_sql_http_script": "passed"
   },
   "vendor": {
     "cpp_httplib_moved_without_content_change": true,
@@ -40,7 +41,12 @@
     "src/include/httplib_wrapper.hpp": "fef96c79c81c919e0ea4a9e387433cbfca9d439b9c319a82ac21fdc2e2a0a31e",
     "test/native_extension_test.py": "944cf38c9d0ac54cadd618ca9111ba263c95af2d42d248e35552d19891e5edbf",
     "test/sql/lifecycle.test": "bebceda2b9a98038548b2e2575bc0c96b547c10f189713934d173dba4f212276",
-    ".github/workflows/MainDistributionPipeline.yml": "c8a675c7bc2ec0b8f04381e50b9d767e333981bb84c039ab8fb588c603c64ec1",
-    "third_party/httplib/cpp-httplib.h": "e4991b69f485bc39027e34b3c101c20f5cd8cc9a34d871da04108b50694558e3"
-  }
+    ".github/workflows/MainDistributionPipeline.yml": "63af591a206b3a489cfe2bb7065b9f02f220583cffda0066a250b0194c363b59",
+    "third_party/httplib/cpp-httplib.h": "e4991b69f485bc39027e34b3c101c20f5cd8cc9a34d871da04108b50694558e3",
+    "test/native_http_test.cpp": "a10572bccf18973602fe46523247d5a19974222339465ef1a6bc7e2083e10d5d",
+    "test/native_server_test.py": "e1456268d0bb10405740c77168b07d63b2ea3e8fc6e54005c85a7058881718a7",
+    "test/sql/server.test": "6501efafa1e00527e587ce6d8ab78047a0110a392af4f4b1c53b7652e6607a50",
+    "src/include/simple_ui.hpp": "45e83afdc916feba7dcf3cfbd310d90fe083ceda8c163d45fdf8e784a97e6e7d"
+  },
+  "merged_parallel_fix": "669345573c5d9a80a05a29cb71d040cccf52f7d6"
 }
