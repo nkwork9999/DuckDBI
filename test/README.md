@@ -28,7 +28,7 @@ The existing Marked v9 parser is served from a pinned dev dependency in browser
 tests, rather than mocked or downloaded from the CDN.
 
 DuckDB v2.0.0 community CI uses source `d54cbbe3df17e8e5ce68312f483b4155836112aa`
-(the current untagged SDK reports `v2.0.0-alpha49307`). Build/load the matching
+(the official `v2.0.0` tag points to this commit). Build/load the matching
 artifact and run:
 
 ```sh
