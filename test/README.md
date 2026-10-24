@@ -26,3 +26,18 @@ NULL/non-text columns, query replacement, missing parser errors, and HTML/link
 sanitization. SQL fences in stored Markdown must not issue further queries.
 The existing Marked v9 parser is served from a pinned dev dependency in browser
 tests, rather than mocked or downloaded from the CDN.
+
+DuckDB v2.0.0 community CI uses source `d54cbbe3df17e8e5ce68312f483b4155836112aa`
+(the current untagged SDK reports `v2.0.0-alpha49307`). Build/load the matching
+artifact and run:
+
+```sh
+python3 test/native_extension_test.py --duckdb build/release/duckdb --extension build/release/extension/duckdbi/duckdbi.duckdb_extension
+```
+
+This uses the actual extension loader and loopback HTTP. It checks that PREPARE
+has no server side effect, multirow start results, raw UTF-8/quoted column names,
+JSON value types, filtered/multibatch results, errors and connection recovery.
+The source distribution pipeline runs it through the Linux post-build hook.
+`test/sql/lifecycle.test` also runs in the normal native SQL suite and covers
+multirow stop, invalid ports, NULLs and connection reuse.
