@@ -1,0 +1,69 @@
+{
+  "date": "2026-10-24",
+  "community_pr": "https://github.com/duckdb/community-extensions/pull/2928",
+  "duckdb": {
+    "community_release_alias": "v2.0.0",
+    "commit": "d54cbbe3df17e8e5ce68312f483b4155836112aa",
+    "local_sdk_version": "v2.0.0",
+    "local_platform": "osx_arm64",
+    "profile": "Debug",
+    "source_ci_tools": "v2.0-cyanoptera",
+    "prior_local_sdk_version": "v2.0.0-alpha49307"
+  },
+  "regressions_observed_before_fix": [
+    "private QueryResult names/types compile errors",
+    "PREPARE started the HTTP server before EXECUTE",
+    "only 3 of 4099 stop results initialized",
+    "multirow start returned one message and two empty strings",
+    "invalid port was reported as INTERNAL because start was not fallible"
+  ],
+  "validation": {
+    "project_unit_script": "passed",
+    "official_sdk_format_check": "passed",
+    "native_extension_build_load_http": "passed",
+    "http_filtered_rows_checked": 4001,
+    "multirow_start_results": 3,
+    "multirow_stop_results": 4099,
+    "native_sql": {
+      "combined_cases": 4,
+      "combined_assertions": 24,
+      "skips": 0,
+      "local_harness": "same SQL with require replaced by mandatory absolute LOAD; matching actual SDK unittest runner",
+      "sdk_version": "v2.0.0-alpha49307 (same source SHA; prior local build)"
+    },
+    "cross_platform_ci": "pending_new_source_and_community_revision",
+    "parallel_native_sql_http_script": "passed",
+    "official_release_cli": {
+      "version": "v2.0.0",
+      "sha": "d54cbbe3df17e8e5ce68312f483b4155836112aa",
+      "url": "https://github.com/duckdb/duckdb/releases/download/v2.0.0/duckdb-cli-osx-arm64.tar.gz",
+      "archive_sha256": "188a36fe8883ef52e69165a0cbb6031ef679c8e6c448a1ce22951964149b7f96",
+      "both_native_http_sql_scripts": "passed",
+      "extension_load": "passed with ordinary version validation",
+      "module_sha256": "1b03c08d85a6785025f691c2b2368f003c2817784aa98dcc183310d1c821d6d8"
+    },
+    "metadata_regression": {
+      "red": "CI extension metadata identified the full commit SHA while the prebuilt host identifies v2.0.0, causing LOAD rejection",
+      "fix": "Makefile defaults DUCKDB_VERSION to v2.0.0 with ?=, allowing CI environment version; workflow separately pins SDK commit",
+      "green": "Actual modules rebuilt with v2.0.0 metadata and both loaded into official v2.0.0 CLI; all native scripts pass"
+    }
+  },
+  "vendor": {
+    "cpp_httplib_moved_without_content_change": true,
+    "sha256": "e4991b69f485bc39027e34b3c101c20f5cd8cc9a34d871da04108b50694558e3"
+  },
+  "source_sha256": {
+    "src/duckdbi_extension.cpp": "45070bc7c5307de0455a155ffecd1cb483b0388e0d52625db6281d24d10baa00",
+    "src/include/httplib_wrapper.hpp": "fef96c79c81c919e0ea4a9e387433cbfca9d439b9c319a82ac21fdc2e2a0a31e",
+    "test/native_extension_test.py": "944cf38c9d0ac54cadd618ca9111ba263c95af2d42d248e35552d19891e5edbf",
+    "test/sql/lifecycle.test": "bebceda2b9a98038548b2e2575bc0c96b547c10f189713934d173dba4f212276",
+    ".github/workflows/MainDistributionPipeline.yml": "63af591a206b3a489cfe2bb7065b9f02f220583cffda0066a250b0194c363b59",
+    "third_party/httplib/cpp-httplib.h": "e4991b69f485bc39027e34b3c101c20f5cd8cc9a34d871da04108b50694558e3",
+    "test/native_http_test.cpp": "a10572bccf18973602fe46523247d5a19974222339465ef1a6bc7e2083e10d5d",
+    "test/native_server_test.py": "e1456268d0bb10405740c77168b07d63b2ea3e8fc6e54005c85a7058881718a7",
+    "test/sql/server.test": "6501efafa1e00527e587ce6d8ab78047a0110a392af4f4b1c53b7652e6607a50",
+    "src/include/simple_ui.hpp": "45e83afdc916feba7dcf3cfbd310d90fe083ceda8c163d45fdf8e784a97e6e7d",
+    "Makefile": "bc282823eea6bcaa095257d27ab677f16d357257664e763a18d18fce9fcd1948"
+  },
+  "merged_parallel_fix": "669345573c5d9a80a05a29cb71d040cccf52f7d6"
+}
